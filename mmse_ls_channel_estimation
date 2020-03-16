@@ -1,0 +1,89 @@
+clc
+clear all
+close all
+
+nCP = 64;%round(Tcp/Ts);
+nFFT = 256; 
+NT = nFFT + nCP;
+F = dftmtx(nFFT)/sqrt(nFFT);
+
+MC = 2;
+
+sir_range = [-20 -10 0 10 20];
+snr = 10.^(sir_range/10);
+snr_noise = 20;
+L = 1;
+%ChEstLS = zeros(1,length(sir_range));
+%ChEstMMSE = zeros(1,length(sir_range));
+
+iteration = 1;
+for ii = 1:length(sir_range)
+    
+    ChMSE_LS = 0;
+    ChMSE_LMMSE=0; 
+    
+    for mc = 1:MC
+% Random channel taps
+        g = randn(L,1)+1i*randn(L,1);
+        g = g/norm(g);
+        H = fft(g,nFFT);
+        H = H'; %for single tap
+        
+% generation of symbol
+        X = 2*(rand(256,1)>0.5)-1;
+        x = F'*X;
+        xout = [x(nFFT-nCP+1:nFFT);x];   
+        
+% channel convolution and AWGN
+        y = conv(xout,g);
+        
+        Fs = 2e7;           %samples per second 
+        dt = 1/Fs;          %seconds per sample
+        stoptime = 8 * 1e-6; % duration of the signal
+        t = (-stoptime:dt:stoptime-dt)';
+        alpha = 30e9;
+        fc = 0;
+        ra_in = rms(x)*((10^(-sir_range(ii)/20)))*exp(1i*2*pi*(fc*t+(alpha/2)*t.^2)); 
+
+        white_noise =randn(nFFT+nCP+L-1,1) + 1i*randn(nFFT+nCP+L-1,1);
+        No = 10^(-sir_range(ii)/10);
+        %y =  y + rms(x)*((10^(-snr_noise/20)))*white_noise + ra_in;
+        y =  y + ra_in;
+        
+% Receiver processing
+        y = y(nCP+1:NT);
+        Y = F*y;
+        
+% frequency doimain LS channel estimation 
+        HhatLS(:,mc) = Y./X; 
+        %ChMSE_LS = ChMSE_LS + ((H -HhatLS)'*(H-HhatLS))/nFFT;
+        
+% Frequency domain LMMSE estimation
+        Rhh = H*H';
+        W = Rhh/(Rhh+(rms(x)*((10^(-sir_range(ii)/20)))*eye(nFFT)));
+        HhatLMMSE(:,mc) = W*HhatLS(:,mc);
+        %ChMSE_LMMSE = ChMSE_LMMSE + ((H -HhatLMMSE)'*(H-HhatLMMSE))/nFFT;        
+     
+         
+    end
+    ChEstLS(:,iteration) = mean(HhatLS,2);
+    ChEstMMSE(:,iteration)= mean(ChMSE_LMMSE,2);
+    iteration = iteration + 1;
+    
+end
+
+% Channel estimation 
+plot((-128:127)*78125*1e-6, ChEstLS(:,1), '+-', 'LineWidth',2);
+hold on
+plot((-128:127)*78125*1e-6, ChEstLS(:,2), '+-', 'LineWidth',2);
+plot((-128:127)*78125*1e-6, ChEstLS(:,3), '+-', 'LineWidth',2);
+plot((-128:127)*78125*1e-6, ChEstLS(:,4), '+-', 'LineWidth',2);
+plot((-128:127)*78125*1e-6, ChEstLS(:,5), '+-', 'LineWidth',2);
+hold off
+legend('-20', '-10','0','10','20');
+%semilogy(sir_range,ChEstLS,'r','LineWidth',2);
+%hold on;grid on;xlabel('EsNodB'); ylabel('Channel MSE');
+%semilogy(sir_range,ChEstMMSE,'k','LineWidth',2);
+
+%legend('LS','MMSE');
+
